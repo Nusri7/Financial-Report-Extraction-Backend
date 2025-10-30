@@ -60,7 +60,11 @@ app.post('/api/process', upload.single('file'), async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 5005;
-app.listen(port, () => {
-  console.log(`Financial QC backend listening on port ${port}`);
-});
+if (require.main === module) {
+  const port = process.env.PORT || 5005;
+  app.listen(port, () => {
+    console.log(`Financial QC backend listening on port ${port}`);
+  });
+}
+
+module.exports = app;
