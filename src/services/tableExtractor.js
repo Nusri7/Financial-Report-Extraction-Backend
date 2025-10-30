@@ -137,9 +137,12 @@ QUALITY CHECKS (MANDATORY):
   - ONLY quarterly data is used (no annual data)
   - If no quarterly Group/CONSOLIDATED data exists, return appropriate message
 
-  Return ONLY the clean markdown table with complete equity descriptions. No explanations, no extra text.`;
+Return ONLY the clean markdown table with complete equity descriptions. No explanations, no extra text.`;
 
-const CHANGES_IN_EQUITY_FALLBACK_PROMPT = (statementName = 'STATEMENT OF CHANGES IN EQUITY') => `You are an expert financial data extractor specializing in annual reports.
+const CHANGES_IN_EQUITY_FALLBACK_PROMPT = (statementName = 'STATEMENT OF CHANGES IN EQUITY') => {
+  const titles = STATEMENT_TITLES?.['Changes in Equity'] || [];
+  const titleLines = titles.length ? `Look for headings containing:\n- ${titles.join('\n- ')}\n\n` : '';
+  return `You are an expert financial data extractor specializing in annual reports.
 
 Your task: Locate and extract the "${statementName}" table from the provided text.
 
@@ -169,7 +172,8 @@ QUALITY CHECKS:
 - Preserve the hierarchy and sequence of opening balances, movements, and closing balances
 - Do not invent values or alter formatting
 
-Return ONLY the clean markdown table, no commentary.`;
+${titleLines}Return ONLY the clean markdown table, no commentary.`;
+};
 
 const CHANGES_IN_EQUITY_ALIASES = [
   'STATEMENT OF CHANGES IN EQUITY',
@@ -179,6 +183,60 @@ const CHANGES_IN_EQUITY_ALIASES = [
   "STATEMENT OF OWNERS' EQUITY",
   "STATEMENT OF CHANGES IN OWNERS' EQUITY",
 ];
+
+const STATEMENT_TITLES = {
+  'Profit or Loss': [
+    'STATEMENT OF PROFIT OR LOSS',
+    'STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME',
+    'INCOME STATEMENT',
+    'STATEMENT OF INCOME',
+  ],
+  'Comprehensive Income': [
+    'STATEMENT OF COMPREHENSIVE INCOME',
+    'STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME',
+    'STATEMENT OF OTHER COMPREHENSIVE INCOME',
+  ],
+  'Financial Position': [
+    'STATEMENT OF FINANCIAL POSITION',
+    'BALANCE SHEET',
+    'STATEMENT OF ASSETS AND LIABILITIES',
+  ],
+  'Changes in Equity': [
+    'STATEMENT OF CHANGES IN EQUITY',
+    "STATEMENT OF CHANGES IN SHAREHOLDERS' EQUITY",
+    "STATEMENT OF SHAREHOLDERS' EQUITY",
+    "STATEMENT OF STOCKHOLDERS' EQUITY",
+    "STATEMENT OF OWNERS' EQUITY",
+    "STATEMENT OF CHANGES IN OWNERS' EQUITY",
+  ],
+  'Cash Flows': [
+    'STATEMENT OF CASH FLOWS',
+    'CASH FLOW STATEMENT',
+    'CONSOLIDATED CASH FLOW STATEMENT',
+    'STATEMENT OF CASH FLOW',
+  ],
+};
+
+const RELAXED_STATEMENT_PROMPT = (statementName, titles = []) => {
+  const titleBlock = titles.length
+    ? `Look for headings containing any of the following phrases (case-insensitive):\n- ${titles.join('\n- ')}\n\n`
+    : '';
+  return `You are an expert analyst extracting a financial statement from an annual report.
+
+Your mission: return the "${statementName}" table as markdown.
+
+SELECTION RULES:
+1. Prefer Group/Consolidated tables when they exist.
+2. If no Group/Consolidated table is available, use the Company table.
+3. Accept quarterly, semi-annual, or annual data if that is all that is available.
+4. Choose the version with the most complete data.
+
+${titleBlock}OUTPUT REQUIREMENTS:
+- Preserve original column headers, order, units, and formatting (including dashes and parentheses).
+- Include every row, subtotal, total, and note exactly as seen.
+- Do not invent or alter values.
+- Return only the markdown table with no commentary.`;
+};
 
 const CASH_FLOW_PROMPT = `You are an expert financial data extractor specializing in annual reports.
 
@@ -280,25 +338,37 @@ async function extractWithAliases(text, aliases, promptBuilder = GENERIC_PROMPT)
 }
 
 async function extractProfitOrLoss(text) {
-  const aliases = [
-    'STATEMENT OF PROFIT OR LOSS',
-    'STATEMENT OF INCOME',
-    'INCOME STATEMENT',
-  ];
+  const aliases = STATEMENT_TITLES['Profit or Loss'];
   const primary = await extractWithAliases(text, aliases);
   if (isValidTable(primary)) {
     return primary;
   }
-  return primary;
+  const relaxed = await extractWithAliases(
+    text,
+    aliases,
+    (alias) => RELAXED_STATEMENT_PROMPT(alias, STATEMENT_TITLES['Profit or Loss']),
+  );
+  if (isValidTable(relaxed)) {
+    return relaxed;
+  }
+  return primary || relaxed;
 }
 
 async function extractComprehensiveIncome(text) {
-  const aliases = [
-    'STATEMENT OF COMPREHENSIVE INCOME',
-    'STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME',
-    'STATEMENT OF OTHER COMPREHENSIVE INCOME',
-  ];
-  return extractWithAliases(text, aliases);
+  const aliases = STATEMENT_TITLES['Comprehensive Income'];
+  const primary = await extractWithAliases(text, aliases);
+  if (isValidTable(primary)) {
+    return primary;
+  }
+  const relaxed = await extractWithAliases(
+    text,
+    aliases,
+    (alias) => RELAXED_STATEMENT_PROMPT(alias, STATEMENT_TITLES['Comprehensive Income']),
+  );
+  if (isValidTable(relaxed)) {
+    return relaxed;
+  }
+  return primary || relaxed;
 }
 
 async function extractFinancialPosition(text) {
@@ -311,7 +381,19 @@ async function extractFinancialPosition(text) {
     'BALANCE SHEET',
     'STATEMENT OF ASSETS AND LIABILITIES',
   ];
-  return extractWithAliases(text, aliases);
+  const strict = await extractWithAliases(text, aliases);
+  if (isValidTable(strict)) {
+    return strict;
+  }
+  const relaxed = await extractWithAliases(
+    text,
+    aliases,
+    (alias) => RELAXED_STATEMENT_PROMPT(alias, STATEMENT_TITLES['Financial Position']),
+  );
+  if (isValidTable(relaxed)) {
+    return relaxed;
+  }
+  return strict || relaxed;
 }
 
 async function extractChangesInEquity(text) {
@@ -342,15 +424,24 @@ async function extractCashFlows(text) {
   if (isValidTable(firstAttempt)) {
     return firstAttempt;
   }
-  const aliases = [
-    'STATEMENT OF CASH FLOWS',
-    'CASH FLOW STATEMENT',
-    'CONSOLIDATED CASH FLOW STATEMENT',
-  ];
+  const aliases = STATEMENT_TITLES['Cash Flows'];
   const fallback = await extractWithAliases(text, aliases);
   if (isValidTable(fallback)) {
     return fallback;
   }
+  const relaxed = await extractWithAliases(
+    text,
+    aliases,
+    (alias) => RELAXED_STATEMENT_PROMPT(alias, STATEMENT_TITLES['Cash Flows']),
+  );
+  if (isValidTable(relaxed)) {
+    return relaxed;
+  }
+
+  if (!isValidTable(firstAttempt) && !isValidTable(fallback) && relaxed && !isValidTable(relaxed)) {
+    console.warn('[tableExtractor] Cash Flows extraction failed: no valid table found after relaxed prompt.');
+  }
+
   return firstAttempt || fallback;
 }
 
