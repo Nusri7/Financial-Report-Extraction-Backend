@@ -190,16 +190,19 @@ const STATEMENT_TITLES = {
     'STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME',
     'INCOME STATEMENT',
     'STATEMENT OF INCOME',
+    'Statement of profit or loss, nature of expense'
   ],
   'Comprehensive Income': [
     'STATEMENT OF COMPREHENSIVE INCOME',
     'STATEMENT OF PROFIT OR LOSS AND OTHER COMPREHENSIVE INCOME',
     'STATEMENT OF OTHER COMPREHENSIVE INCOME',
+    'Statement of other comprehensive income, net of tax'
   ],
   'Financial Position': [
     'STATEMENT OF FINANCIAL POSITION',
     'BALANCE SHEET',
     'STATEMENT OF ASSETS AND LIABILITIES',
+    'STATEMENT OF FINANCIAL POSITION, ORDER OF LIQUIDITY',
   ],
   'Changes in Equity': [
     'STATEMENT OF CHANGES IN EQUITY',
@@ -214,6 +217,7 @@ const STATEMENT_TITLES = {
     'CASH FLOW STATEMENT',
     'CONSOLIDATED CASH FLOW STATEMENT',
     'STATEMENT OF CASH FLOW',
+    'Statement of cash flows, indirect method'
   ],
 };
 
@@ -380,6 +384,7 @@ async function extractFinancialPosition(text) {
     'STATEMENT OF FINANCIAL POSITION',
     'BALANCE SHEET',
     'STATEMENT OF ASSETS AND LIABILITIES',
+    'STATEMENT OF FINANCIAL POSITION, ORDER OF LIQUIDITY',
   ];
   const strict = await extractWithAliases(text, aliases);
   if (isValidTable(strict)) {
