@@ -82,6 +82,21 @@ QUALITY CHECKS (MANDATORY):
 
 Return ONLY the clean markdown table with complete descriptions and original headers. No explanations, no extra text.`;
 
+const COLUMN_HEADER_CORRECTION_PROMPT = `You are validating markdown tables extracted from financial statements.
+
+You will receive one markdown table. The numeric values are already correct, but the header row may be wrong (for example, the extractor might have kept a line item name in the header, lost the units, or failed to include the quarter labels).
+
+Your job:
+1. Identify the correct column headers for the table using only the information in the table.
+2. If the first row already contains the true header cells (dates, periods, units), return the table unchanged.
+3. If the first row is actually a line item or otherwise incorrect, promote the first row that contains period labels (quarters, dates, units) to be the header row.
+4. When promoting a row to headers, remove that row from the body to avoid duplicates.
+5. Preserve every numeric cell and line item description exactly as originally provided.
+6. Never fabricate additional periods or values. If you cannot find a better header row, return the table exactly as given.
+7. Always respond with a valid markdown table that keeps the same column order and row order (besides the header change) and no extra commentary.
+
+Return only the corrected markdown table.`;
+
 const CHANGES_IN_EQUITY_PROMPT = `You are an expert financial data extractor specializing in annual reports.
 
   Your task: Find and extract the "STATEMENT OF CHANGES IN EQUITY" table from the provided text.
@@ -595,7 +610,8 @@ async function extractFinancialStatementsData(pdfBuffer, fileName) {
     }),
   );
 
-  const tablesMarkdown = Object.fromEntries(tablesEntries);
+  const rawTablesMarkdown = Object.fromEntries(tablesEntries);
+  const tablesMarkdown = await correctColumnHeadersAcrossStatements(rawTablesMarkdown);
   Object.entries(tablesMarkdown).forEach(([label, rawTable]) => {
     logTableSummary(label, rawTable);
   });
@@ -633,3 +649,49 @@ async function extractFinancialStatementsData(pdfBuffer, fileName) {
 module.exports = {
   extractFinancialStatementsData,
 };
+
+async function correctColumnHeadersAcrossStatements(tablesMarkdown) {
+  const correctedEntries = [];
+  for (const [statement, markdown] of Object.entries(tablesMarkdown || {})) {
+    const trimmed = (markdown || '').trim();
+    if (!trimmed) {
+      correctedEntries.push([statement, markdown]);
+      continue;
+    }
+    const lower = trimmed.toLowerCase();
+    if (lower.includes('no table found') || lower.includes('no quarterly data')) {
+      correctedEntries.push([statement, markdown]);
+      continue;
+    }
+    try {
+      const corrected = await correctColumnHeaders(statement, trimmed);
+      if (typeof corrected === 'string' && corrected.trim().includes('|')) {
+        const cleaned = corrected.trim();
+        if (cleaned !== trimmed) {
+          console.info(`[tableExtractor] Column header correction applied for ${statement}.`);
+        } else {
+          console.info(`[tableExtractor] Column header correction made no changes for ${statement}.`);
+        }
+        correctedEntries.push([statement, cleaned]);
+      } else {
+        console.warn(`[tableExtractor] Column header correction returned unexpected format for ${statement}. Keeping original table.`);
+        correctedEntries.push([statement, markdown]);
+      }
+    } catch (error) {
+      console.warn(`[tableExtractor] Column header correction failed for ${statement}: ${error.message || error}`);
+      correctedEntries.push([statement, markdown]);
+    }
+  }
+  return Object.fromEntries(correctedEntries);
+}
+
+async function correctColumnHeaders(statementName, markdownTable) {
+  const messages = [
+    { role: 'system', content: COLUMN_HEADER_CORRECTION_PROMPT },
+    {
+      role: 'user',
+      content: `Statement: ${statementName}\nMarkdown Table:\n${markdownTable}`,
+    },
+  ];
+  return callOpenRouter(messages, { temperature: 0 });
+}
