@@ -36,7 +36,7 @@ const DEFAULT_CLASSIFICATION_METRICS = [
 ];
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL = 'openai/gpt-5-mini';
+const MODEL = 'x-ai/grok-code-fast-1';
 const LLM_WHISPERER_BASE_URL = process.env.LLMWHISPERER_BASE_URL_V2
   || 'https://llmwhisperer-api.us-central.unstract.com/api/v2';
 const LLM_WHISPERER_API_KEYS = [
